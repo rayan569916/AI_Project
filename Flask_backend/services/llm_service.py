@@ -24,16 +24,15 @@ def generate_response(user_input: str) -> str:
     start = time.time()
     outputs = model.generate(
         **inputs,
-        max_new_tokens=80,
+        max_new_tokens=5000,
         do_sample=True,
-        temperature=0.7,
-        top_p=0.9
+        temperature=1.3,
+        top_p=0.95
     )
     end = time.time()
 
     decoded = tokenizer.decode(outputs[0], skip_special_tokens=True)
 
-    # 🔥 Extract only assistant reply
     reply = decoded.split("<|assistant|>")[-1].strip()
 
     print(f"⏱️ Time: {end - start:.2f}s")
