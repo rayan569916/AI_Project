@@ -1,8 +1,8 @@
 from transformers import AutoTokenizer, AutoModelForCausalLM
 import torch
 import time
-
-model_id = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+# rm -rf ~/.cache/huggingface 
+model_id = "TinyLlama/TinyLlama-1.1B-Python-v0.1"
 
 tokenizer = AutoTokenizer.from_pretrained(model_id)
 model = AutoModelForCausalLM.from_pretrained(
@@ -24,7 +24,7 @@ def generate_response(user_input: str) -> str:
     start = time.time()
     outputs = model.generate(
         **inputs,
-        max_new_tokens=5000,
+        max_new_tokens=500,
         do_sample=True,
         temperature=1.3,
         top_p=0.95
