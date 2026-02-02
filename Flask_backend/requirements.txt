@@ -49,12 +49,16 @@ networkx==3.6.1
 numpy==2.4.1
 orjson==3.11.6
 packaging==25.0
+pillow==12.1.0
 primp==0.15.0
 propcache==0.4.1
 psutil==7.2.2
 pydantic==2.12.5
 pydantic-settings==2.12.0
 pydantic_core==2.41.5
+PyPDF2==3.0.1
+pytesseract==0.3.13
+python-docx==1.2.0
 python-dotenv==1.2.1
 PyYAML==6.0.3
 regex==2026.1.15

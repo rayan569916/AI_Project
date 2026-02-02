@@ -46,7 +46,7 @@ def condense_query(user_input: str, history: list):
 
 
 
-def generate_response(user_input: str,history:[]) -> str:
+def generate_response(user_input: str,history,mode:str,file:str) -> str:
 
     smart_query=condense_query(user_input,history)
     try:
@@ -56,29 +56,49 @@ def generate_response(user_input: str,history:[]) -> str:
         search_results = "No current search data available."
 
     prompt = f"""<|system|>
-                You are a factual QA assistant.
+            You are a factual QA assistant.
 
-                Rules:
-                - Use ONLY the information from SEARCH RESULTS.
-                - If the answer is not present, say "I don't know based on the search results."
-                - Answer in 2–3 short sentences.
-                - Do not add extra knowledge.
+            You are given information from multiple sources:
+            1. SEARCH RESULTS (from the web)
+            2. DOCUMENT CONTENT (uploaded files)
+            3. IMAGE CONTENT (text extracted from images)
 
-                SEARCH RESULTS:
-                {search_results}
-                <|user|>
-                {user_input}
-                <|assistant|>
+            Rules:
+            - Use ONLY the information provided in the sources below.
+            - Prefer DOCUMENT CONTENT over SEARCH RESULTS if both are available.
+            - Use IMAGE CONTENT only if it is relevant to the question.
+            - If the answer is not clearly present in any source, say:
+            "I don't know based on the provided information."
+            - Answer in 2–3 short sentences.
+            - Do not add assumptions or external knowledge.
+
+            <|context|>
+            SEARCH RESULTS:
+            {search_results}
+
+            DOCUMENT AND IMAGE CONTENT:
+            {file}
+
+            <|user|>
+            {user_input}
+            <|assistant|>
             """
-    device = model.device    
+    max_token=60
+    if mode=="fast":
+        max_token=60
+    elif mode=="thinking":
+        max_token=120
+    elif mode=="pro":
+        max_token=200
 
+    device = model.device    
     inputs = tokenizer(prompt, return_tensors="pt").to(device)
 
     start = time.time()
     outputs = model.generate(
         **inputs,
-        max_new_tokens=60,
-        do_sample=False,          # 🔥 key change
+        max_new_tokens=max_token,
+        do_sample=False,
         repetition_penalty=1.2,
         eos_token_id=tokenizer.eos_token_id
     )
