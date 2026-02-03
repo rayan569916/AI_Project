@@ -1,4 +1,4 @@
-import { Component, ElementRef, ViewChild } from '@angular/core';
+import { ChangeDetectorRef, Component, ElementRef, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Attachment } from './chat.section.component.interface';
@@ -18,27 +18,29 @@ export class ChatSectionComponent {
   FileSelected: boolean = false;
   borderRadius = "rounded-full items-center";
   isLoading = false;
-  selectedModel:string="fast";
-  chat_history_array:[]=[]
+  selectedModel: string = "fast";
+  chat_history_array: [] = []
+  modelName = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+  messages: { text: string, sender: 'user' | 'ai', attachments?: Attachment[] }[] = [];
   @ViewChild('fileInput') fileInput!: ElementRef<HTMLInputElement>
   @ViewChild('chatTextarea') chatTextarea!: ElementRef<HTMLTextAreaElement>
 
-  constructor(private service : ChatSectionService){}
+  constructor(private service: ChatSectionService, private cdr: ChangeDetectorRef) { }
 
   showCardMethod() {
     this.showCard = !this.showCard;
   }
-  showModelDetailMethod(){
-    this.showModelDetail = !this.showModelDetail;   
+  showModelDetailMethod() {
+    this.showModelDetail = !this.showModelDetail;
   }
 
-  selectCloseMethod(){
-    if (this.showCard) this.showCard=false;
-    if (this.showModelDetail) this.showModelDetail=true;
+  selectCloseMethod() {
+    if (this.showCard) this.showCard = false;
+    if (this.showModelDetail) this.showModelDetail = true;
   }
 
-  modelSelecter(type:string){
-    this.selectedModel=type;
+  modelSelecter(type: string) {
+    this.selectedModel = type;
     this.showModelDetailMethod()
   }
 
@@ -105,21 +107,48 @@ export class ChatSectionComponent {
 
 
   sendChatMethod() {
+    if (!this.chatValue.trim() && this.selectedFiles.length === 0) return;
+
+    const currentMessage = {
+      text: this.chatValue,
+      sender: 'user' as const,
+      attachments: [...this.selectedFiles]
+    };
+    this.messages.push(currentMessage);
+
+    this.borderRadius = "rounded-full items-center"; // Reset style
     const formData = new FormData();
     formData.append('user_chat', this.chatValue);
-    formData.append('selected_mode',this.selectedModel);
-    this.selectedFiles.forEach((item,index)=>{
-      formData.append('attachments',item.file)
+    formData.append('selected_mode', this.selectedModel);
+    this.selectedFiles.forEach((item, index) => {
+      formData.append('attachments', item.file)
     })
-    formData.append('chat_history',JSON.stringify(this.chat_history_array))
+    formData.append('chat_history', JSON.stringify(this.chat_history_array))
     this.isLoading = true;
     this.chatValue = "";
     this.selectedFiles = [];
     this.FileSelected = false;
-    this.borderRadius = "rounded-full items-center"; 
+    this.borderRadius = "rounded-full items-center";
 
-    this.service.sendChatMethod(formData).subscribe(res=>{
-      console.log(res)
-    })
+    this.service.sendChatMethod(formData).subscribe({
+      next: (res: any) => {
+        this.messages.push({
+          text: res.reply || "No response",
+          sender: 'ai'
+        });
+        this.modelName = res.model_id || "TinyLlama/TinyLlama-1.1B-Chat-v1.0";
+        this.isLoading = false;
+        this.cdr.detectChanges(); // Force update
+      },
+      error: (err) => {
+        console.error(err);
+        this.messages.push({
+          text: "Error: Could not get response from server.",
+          sender: 'ai'
+        });
+        this.isLoading = false;
+        this.cdr.detectChanges(); // Force update
+      }
+    });
   }
 }

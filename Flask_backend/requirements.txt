@@ -49,6 +49,7 @@ networkx==3.6.1
 numpy==2.4.1
 orjson==3.11.6
 packaging==25.0
+peft==0.18.1
 pillow==12.1.0
 primp==0.15.0
 propcache==0.4.1

@@ -4,13 +4,25 @@ import time
 from langchain_community.tools import DuckDuckGoSearchRun
 
 # rm -rf ~/.cache/huggingface 
-model_id = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
-tokenizer = AutoTokenizer.from_pretrained(model_id)
+from peft import PeftModel
+
+base_model_id = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+adapter_model_id = "xshubhamx/tiny-llama-lora"
+
+tokenizer = AutoTokenizer.from_pretrained(base_model_id)
+
+device = "mps" if torch.backends.mps.is_available() else "cpu"
+print(f"Using device: {device}")
+
 model = AutoModelForCausalLM.from_pretrained(
-    model_id,
-    device_map="cpu",
-    dtype=torch.float32
+    base_model_id,
+    device_map=device,
+    dtype=torch.float16 if device == "mps" else torch.float32
 )
+model = PeftModel.from_pretrained(model, adapter_model_id)
+
+# Return the adapter model ID to the frontend
+model_id = adapter_model_id
 search_tool = DuckDuckGoSearchRun()
 
 def clean_search_results(text: str, max_chars=800):
@@ -33,7 +45,7 @@ def condense_query(user_input: str, history: list):
                     <|assistant|>
                     """
 
-    inputs = tokenizer(search_prompt, return_tensors="pt")
+    inputs = tokenizer(search_prompt, return_tensors="pt").to(device)
 
     outputs = model.generate(
         **inputs,
@@ -44,7 +56,17 @@ def condense_query(user_input: str, history: list):
     decoded = tokenizer.decode(outputs[0], skip_special_tokens=True)
     return decoded.split("<|assistant|>")[-1].strip()
 
-
+def is_complete(text: str) -> bool:
+    text = text.strip()
+    if not text:
+        return False
+        
+    # Check if it ends with partial list number like "1." or "2)"
+    import re
+    if re.search(r'\d+[.)]$', text):
+        return False
+        
+    return text.endswith((".", "!", "?", '"'))
 
 def generate_response(user_input: str,history,mode:str,file:str) -> str:
 
@@ -56,58 +78,88 @@ def generate_response(user_input: str,history,mode:str,file:str) -> str:
         search_results = "No current search data available."
 
     prompt = f"""<|system|>
-            You are a factual QA assistant.
+            You are a helpful and friendly AI assistant.
 
-            You are given information from multiple sources:
-            1. SEARCH RESULTS (from the web)
-            2. DOCUMENT CONTENT (uploaded files)
-            3. IMAGE CONTENT (text extracted from images)
+            You have access to the following context:
+            1. WEB SEARCH RESULTS
+            2. UPLOADED DOCUMENTS (if any)
 
             Rules:
-            - Use ONLY the information provided in the sources below.
-            - Prefer DOCUMENT CONTENT over SEARCH RESULTS if both are available.
-            - Use IMAGE CONTENT only if it is relevant to the question.
-            - If the answer is not clearly present in any source, say:
-            "I don't know based on the provided information."
-            - Answer in 2–3 short sentences.
-            - Do not add assumptions or external knowledge.
+            - Answer the user's question directly and naturally.
+            - Do NOT start with "Based on..." or "According to...".
+            - Do NOT mention "search results", "documents", or "provided information" in your response.
+            - Act as if you know the answer yourself.
+            - If the contextual information is not relevant, ignore it.
+            - Keep answers concise (2-3 sentences).
 
             <|context|>
-            SEARCH RESULTS:
+            WEB SEARCH RESULTS:
             {search_results}
 
-            DOCUMENT AND IMAGE CONTENT:
-            {file}
+            UPLOADED DOCUMENTS:
+            {file if file else "None"}
 
             <|user|>
             {user_input}
             <|assistant|>
             """
-    max_token=60
+    max_token=200
+    temperature = 0.7
+    top_k = 50
+    
     if mode=="fast":
-        max_token=60
+        max_token=150
     elif mode=="thinking":
-        max_token=120
+        max_token=300
+        temperature = 0.8
     elif mode=="pro":
-        max_token=200
+        max_token=600
+        temperature = 0.5 
 
-    device = model.device    
     inputs = tokenizer(prompt, return_tensors="pt").to(device)
 
     start = time.time()
     outputs = model.generate(
         **inputs,
         max_new_tokens=max_token,
-        do_sample=False,
+        do_sample=True,
+        temperature=temperature,
+        top_k=top_k, 
         repetition_penalty=1.2,
         eos_token_id=tokenizer.eos_token_id
     )
-    end = time.time()
-
+    
     decoded = tokenizer.decode(outputs[0], skip_special_tokens=True)
-
     reply = decoded.split("<|assistant|>")[-1].strip()
-    reply = reply.split("<|user|>")[0].strip()
 
+    # Continuation Loop
+    retry_count = 0
+    max_retries = 3
+    
+    while not is_complete(reply) and retry_count < max_retries:
+        retry_count += 1
+        print(f"🔄 Extending response... (Attempt {retry_count})")
+        
+        continuation_prompt = prompt + reply
+        
+        inputs_cont = tokenizer(continuation_prompt, return_tensors="pt").to(device)
+        
+        outputs = model.generate(
+            **inputs_cont,
+            max_new_tokens=100,
+            do_sample=True,
+            temperature=temperature,
+            repetition_penalty=1.2,
+            eos_token_id=tokenizer.eos_token_id
+        )
+        
+        full_decoded = tokenizer.decode(outputs[0], skip_special_tokens=True)
+        # Extract the full reply again (since we fed prompt + partial_reply)
+        reply = full_decoded.split("<|assistant|>")[-1].strip()
+
+    end = time.time()
     print(f"⏱️ Time: {end - start:.2f}s")
-    return reply
+    
+    return {"reply":reply,
+            "search_results":search_results,
+            "model":model_id}

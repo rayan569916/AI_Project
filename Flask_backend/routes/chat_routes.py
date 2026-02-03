@@ -1,4 +1,4 @@
-from flask import Blueprint,request
+from flask import Blueprint,request,jsonify
 from services.llm_service import generate_response
 from processors.image_processor import extract_text_from_image
 from processors.pdf_processor import extract_text_from_pdf_file
@@ -24,5 +24,5 @@ def chat_method():
         files.seek(0)
 
 
-    return generate_response(user_input=text_message,history=chat_history,mode=selected_mode,file=extracted_input)
+    return jsonify(generate_response(user_input=text_message,history=chat_history,mode=selected_mode,file=extracted_input)), 200
 
